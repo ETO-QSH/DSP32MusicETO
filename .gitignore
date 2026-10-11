@@ -1,4 +1,4 @@
-# ????? IDE ??
+# build outputs and IDE dirs
 Debug/
 Flash/
 FlashTest/
@@ -8,16 +8,14 @@ Release/
 *.out
 *.map
 *.lst
+
+# backups and temporary files
 *.bak
 *.bak[0-9]*
 *_new.c
-# ???????/????????
-_commitmsg.txt
-*_new.c
-
-# 临时文件不入库
 _m.txt
 _commitmsg.txt
+
 # Python cache
 __pycache__/
 *.pyc
