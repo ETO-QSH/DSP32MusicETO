@@ -82,7 +82,7 @@ void app_task(void)
     smg_show(g_value);
     if ((++s_div) >= 3U) { s_div = 0U; s_ms = (U16)(s_ms + APP_LOOP_MS); }   /* 虚拟时钟 /3 */
 
-    /* 2) 音乐：补充合成（追着中断的读指针填环形缓冲）*/
+    /* 2) music: keep the synth ring topped up */
     audio_task();
 
     /* 3) 计数 0..9999（不在这里请求刷 LCD ⇒ 不播放时 LCD 保持静止）*/

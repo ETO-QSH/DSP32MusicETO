@@ -14,7 +14,7 @@
 #include "DSP2833x_Examples.h"
 #include "audio.h"
 #include "key.h"
-#include "song_tables.h"
+#include "../MIDI/song_tables.h"
 
 #define AUDIO_TBPRD     5999U                       /* 150MHz/6000 = 25kHz */
 #define AUDIO_SR        25000UL
@@ -341,7 +341,7 @@ void audio_task(void)
 
     for (ch = 0U; ch < AUDIO_CH; ch++) {
         guard = 0U;
-        /* 追着 ISR 读指针填（留 1 格空以区分空/满）*/
+        /* ISR: move one sample per carrier period */
         while ((((U16)(s_tail[ch] + 1U)) & RING_MASK) != s_head[ch] && guard < RING_LEN) {
             if (s_left[ch] == 0UL) {
                 if (next_event(ch) == 0U) {        /* 曲表播完 */

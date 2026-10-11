@@ -18,7 +18,7 @@
 #define KEY_MUX2_COLS   (B_MUX2(KEY_COL1_PIN) | B_MUX2(KEY_COL2_PIN) | B_MUX2(KEY_COL3_PIN))
 #define KEY_DAT_COLS    (B_BIT(KEY_COL1_PIN) | B_BIT(KEY_COL2_PIN) | B_BIT(KEY_COL3_PIN))
 
-/* 娑堟姈鐘舵€?*/
+/* key scan state */
 static U16 key_last_raw = 0U;
 static U16 key_stable   = 0U;
 static U16 key_latched  = 0U;
