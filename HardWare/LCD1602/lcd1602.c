@@ -44,19 +44,19 @@ static void lcd_write(U8 value, U16 rs)
     for (i = 0U; i < 8U; i++) {                 /* DB0..DB7 逐位送出 */
         bsp_pin_set(lcd_data_pin[i], (U16)(((U16)value >> i) & 0x0001U));
     }
-    delay_us(2U);                               /* 数据建立 */
+    delay_us(5U);                               /* 数据建立 */
 
     bsp_pin_set(LCD_EN_PIN, 1U);                /* E 上升沿 */
-    delay_us(20U);                              /* E 高电平宽度（>>450ns） */
+    delay_us(50U);                              /* E 高电平宽度（>>450ns） */
     bsp_pin_set(LCD_EN_PIN, 0U);                /* E 下降沿 → 写入 */
-    delay_us(60U);                              /* 等 LCD 内部执行完 */
+    delay_us(100U);                              /* 等 LCD 内部执行完 */
 }
 
 void lcd1602_cmd(U8 cmd)
 {
     lcd_write(cmd, 0U);
     if ((cmd == 0x01U) || (cmd == 0x02U)) {
-        delay_ms(2U);                           /* 清屏/回车需要 1.52ms */
+        delay_ms(5U);                           /* 清屏/回车需要 1.52ms */
     }
 }
 
@@ -69,11 +69,11 @@ void lcd1602_init(void)
 {
     lcd_pins_init();
 
-    delay_ms(15U);                              /* 上电等待 >15ms */
+    delay_ms(50U);                              /* 上电等待 50ms（放宽） */
     lcd1602_cmd(0x38U);                         /* 8 位数据、2 行、5x7 点阵 */
-    delay_ms(5U);
+    delay_ms(10U);
     lcd1602_cmd(0x38U);
-    delay_us(200U);
+    delay_ms(1U);
     lcd1602_cmd(0x38U);
     lcd1602_cmd(0x08U);                         /* 关显示 */
     lcd1602_cmd(0x01U);                         /* 清屏 */

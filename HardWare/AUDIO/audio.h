@@ -25,6 +25,7 @@ U16  audio_is_playing(void);
 U16  audio_key_check(void);                     /* 按任意键停止，返回 1 */
 
 extern volatile U16 g_audio_events;
+extern volatile U16 g_audio_freq;                     /* 当前最高声部频率(Hz) */
 extern volatile U32 g_audio_samples;
 
 #endif /* AUDIO_H_ */

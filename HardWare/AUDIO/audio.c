@@ -35,11 +35,11 @@ static const U16 s_pitch_hz[49] = {
 };
 
 
-#define AUDIO_TBPRD     999U                       /* 150MHz/1000 = 150kHz */
-#define AUDIO_SR        150000UL
+#define AUDIO_TBPRD     5999U                       /* 150MHz/6000 = 25kHz */
+#define AUDIO_SR        25000UL
 #define RING_LEN        2048U                     /* 2^n；13.6ms，够主循环追 */
 #define RING_MASK       (RING_LEN - 1U)
-#define CMP_CENTER      500U                      /* 50% = 静音 */
+#define CMP_CENTER      3000U                      /* 50% = 静音（25kHz 载波） */
 #define AUDIO_CMPA      (*(volatile Uint16 *)0x68C9UL)   /* 真·CMPA */
 
 static U16 s_ring[RING_LEN];
@@ -68,6 +68,7 @@ static U16 s_pk_i = 0U;   /* 打包表字下标（每事件 +2）*/
 static U32 s_left = 0UL;
 
 volatile U16 g_audio_events  = 0U;
+volatile U16 g_audio_freq    = 0U;       /* 当前所有声部中的最高频率(Hz)：LED 灯效跟随用 */
 volatile U32 g_audio_samples = 0UL;
 
 /* ---------------- ISR：每载波周期搬一个采样到 CMPA ---------------- */
@@ -122,8 +123,8 @@ static U16 synth_duty(void)
     }
     {
         mix = (mix * (S32)s_gain) >> 8;      /* 按声部数归一化（统一音量）*/
-        S32 m = mix >> 3;                    /* 归一化后峰值 4000 ⇒ ±500 满量程 */
-        S32 lim = (S32)(CMP_CENTER - 20U);   /* 线性区：±480（几乎满量程）*/
+        S32 m = (mix >> 1) + (mix >> 2);   /* 3/4 满量程：±3000（中心3000，限幅 ±2980）*/
+        S32 lim = (S32)(CMP_CENTER - 20U);   /* 线性区 ±2980 */
         if (m >  lim) { m =  lim + ((m - lim) >> 4); }   /* 软限幅：超出部分压缩 16 倍 */
         if (m < -lim) { m = -lim + ((m + lim) >> 4); }
         duty = (S32)CMP_CENTER + m;
@@ -180,6 +181,10 @@ static U16 next_event(void)
     v = (U16)((w0 >> 6)  & 0x3FU); f[k] = ((v >= 1U) && (v <= 48U)) ? s_pitch_hz[v] : 0U; k++;
     v = (U16)((w0 >> 12) & 0x3FU); f[k] = ((v >= 1U) && (v <= 48U)) ? s_pitch_hz[v] : 0U; k++;
     v = (U16)( w1        & 0x3FU); f[k] = ((v >= 1U) && (v <= 48U)) ? s_pitch_hz[v] : 0U;
+    {   /* LED 跟随：记录本事件 4 个声部中的最高频率 */
+        U16 k2; g_audio_freq = 0U;
+        for (k2 = 0U; k2 < 4U; k2++) { if (f[k2] > g_audio_freq) { g_audio_freq = f[k2]; } }
+    }
 
     start_chord(f);
     g_audio_events++;

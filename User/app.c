@@ -25,7 +25,7 @@
 
 #define APP_LOOP_MS         8U      /* 一轮主循环的名义时长(ms)，用于虚拟计时 */
 #define APP_COUNT_MS        400U    /* 计数 +1 间隔(虚拟 ms) */
-#define APP_LCD_HEAL_MS     500U    /* 开机后补写 LCD 的时刻（虚拟 ms）*/
+#define APP_LCD_HEAL_MS     2000U    /* 开机后补写 LCD 的时刻（虚拟 ms）*/
 
 volatile U16 g_value = 0U;
 volatile U16 g_effect = 0U;
@@ -39,6 +39,7 @@ static U16 s_last_count = 0U;
 static U16 s_last_step = 0U;
 static U16 s_lcd_dirty = 1U;
 static U16 s_lcd_healed = 0U;
+static U8  s_div        = 0U;    /* 虚拟时钟分频：每 3 轮累加一次 */
 
 /* 画 LCD 两行固定内容（第 16 格 = 按键数字）*/
 static void lcd_draw_all(U16 k)
@@ -81,13 +82,13 @@ void app_task(void)
 
     /* 1) 数码管：每次只刷 1 位（非阻塞），并推进虚拟时间 */
     smg_show(g_value);
-    s_ms = (U16)(s_ms + APP_LOOP_MS);
+    if ((++s_div) >= 3U) { s_div = 0U; s_ms = (U16)(s_ms + APP_LOOP_MS); }   /* 虚拟时钟 /3 */
 
     /* 2) 音乐：补充合成（追着中断的读指针填环形缓冲）*/
     audio_task();
 
     /* 3) 计数 0..9999（不在这里请求刷 LCD ⇒ 不播放时 LCD 保持静止）*/
-    if ((U16)(s_ms - s_last_count) >= ((audio_is_playing() != 0U) ? APP_COUNT_MS : (U16)(APP_COUNT_MS * 16U))) {
+    if ((U16)(s_ms - s_last_count) >= ((audio_is_playing() != 0U) ? 800U : (U16)(APP_COUNT_MS * 16U))) {
         s_last_count = s_ms;
         g_value = (U16)((g_value + 1U) % 10000U);
     }
@@ -140,7 +141,15 @@ void app_task(void)
     /* 5) LED 效果步进 */
         {
         U16 lperiod = led_effect_period(g_effect);
-        if (audio_is_playing() == 0U) {                 /* 未播放：灯效步进同样降为 1/16 速率 */
+        if (audio_is_playing() != 0U) {                /* 播放中：跟随音乐音高，4 档倍速 */
+            U16 lvl;
+            if      (g_audio_freq >= 880U) { lvl = 4U; }   /* >=880Hz  (A5起)   x4 */
+            else if (g_audio_freq >= 660U) { lvl = 3U; }   /* 660~880  (E5~A5)  x3 */
+            else if (g_audio_freq >= 440U) { lvl = 2U; }   /* 440~660  (A4~E5)  x2 */
+            else                          { lvl = 1U; }   /* <440Hz   (A4以下) x1 */
+            lperiod = (U16)(lperiod / lvl);
+            if (lperiod < 16U) { lperiod = 16U; }
+        } else {                                       /* 未播放：保持原 1/16 慢速 */
             lperiod = (lperiod < 0x1000U) ? (U16)(lperiod * 16U) : 0xFFFFU;
         }
         if ((U16)(s_ms - s_last_step) >= lperiod) {
