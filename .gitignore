@@ -15,3 +15,6 @@ Release/
 _commitmsg.txt
 *_new.c
 
+# 临时文件不入库
+_m.txt
+_commitmsg.txt
