@@ -1,0 +1,13 @@
+# ????? IDE ??
+Debug/
+Flash/
+FlashTest/
+Release/
+.settings/
+*.obj
+*.out
+*.map
+*.lst
+*.bak
+*.bak[0-9]*
+*_new.c
