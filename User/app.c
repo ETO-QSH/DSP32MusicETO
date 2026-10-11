@@ -88,7 +88,7 @@ void app_task(void)
     audio_task();
 
     /* 3) 计数 0..9999（不在这里请求刷 LCD ⇒ 不播放时 LCD 保持静止）*/
-    if ((U16)(s_ms - s_last_count) >= ((audio_is_playing() != 0U) ? 800U : (U16)(APP_COUNT_MS * 16U))) {
+    if ((U16)(s_ms - s_last_count) >= ((audio_is_playing() != 0U) ? 512U : (U16)(APP_COUNT_MS * 16U))) {
         s_last_count = s_ms;
         g_value = (U16)((g_value + 1U) % 10000U);
     }
@@ -147,7 +147,7 @@ void app_task(void)
             else if (g_audio_freq >= 660U) { lvl = 3U; }   /* 660~880  (E5~A5)  x3 */
             else if (g_audio_freq >= 440U) { lvl = 2U; }   /* 440~660  (A4~E5)  x2 */
             else                          { lvl = 1U; }   /* <440Hz   (A4以下) x1 */
-            lperiod = (U16)(lperiod / lvl);
+            lperiod = (U16)((lperiod * 2U) / lvl);   /* 倍率整体 /2 ⇒ 等效 0.5/1/1.5/2 */
             if (lperiod < 16U) { lperiod = 16U; }
         } else {                                       /* 未播放：保持原 1/16 慢速 */
             lperiod = (lperiod < 0x1000U) ? (U16)(lperiod * 16U) : 0xFFFFU;
