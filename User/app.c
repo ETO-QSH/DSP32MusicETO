@@ -37,7 +37,6 @@ volatile U16 g_key_count = 0U;
 static U16 s_ms = 0U;
 static U16 s_last_count = 0U;
 static U16 s_last_step = 0U;
-static U16 s_lcd_dirty = 1U;
 static U16 s_lcd_healed = 0U;
 static U8  s_div        = 0U;    /* 虚拟时钟分频：每 3 轮累加一次 */
 
@@ -72,7 +71,6 @@ void app_init(void)
 
     delay_ms(800U);
 
-    s_lcd_dirty = 0U;                               /* 开机已画好，无需再请求刷新 */
 }
 
 void app_task(void)

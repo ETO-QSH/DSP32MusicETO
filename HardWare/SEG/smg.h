@@ -1,23 +1,18 @@
-/* ============================================================================
- *  smg.h —— 4 位共阳/共阴数码管（经 74HC164 段选 + GPIO 位选）
- * ----------------------------------------------------------------------------
- *  硬件（普中 PZ-DSP28335-L，依据官方教程第 17 章）：
- *      共阴数码管，段选 A..DP 经 74HC164 串并转换：
- *          74HC164 数据 DSA = GPIO54，时钟 CLK = GPIO56（上升沿移入，高位先出）
- *      位选 = GPIO70/71/72/73（输出高 → 三极管导通 → 该位选通）
- *      段码: 0=0x3F 1=0x06 2=0x5B 3=0x4F 4=0x66 5=0x6D 6=0x7D 7=0x07 8=0x7F 9=0x6F
- * ========================================================================== */
+/* smg.h -- 4-digit common-anode 7-seg (74HC164 segment + GPIO digit select)
+   segment: 74HC164 DSA=GPIO54 CLK=GPIO56 (shift on rising edge, MSB first)
+   digit  : GPIO70/71/72/73 (high -> transistor on -> digit selected)
+   codes  : 0=0x3F 1=0x06 2=0x5B 3=0x4F 4=0x66 5=0x6D 6=0x7D 7=0x07 8=0x7F 9=0x6F */
 #ifndef SMG_H_
 #define SMG_H_
 
 #include "bsp.h"
 
 #define SMG_DIGITS          4U
-#define SMG_ON_US           600U    /* 非阻塞扫描：每次调用点亮该位的微秒数 */
-#define SMG_REFRESH_MS      2U      /* 每位点亮时间，4 位一轮 ≈ 8ms */
+#define SMG_ON_US           600U    /* on-time per digit, per call (non-blocking scan) */
+#define SMG_REFRESH_MS      2U      /* nominal 4-digit period */
 
 void smg_init(void);
 void smg_off(void);
-void smg_show(U16 value);           /* 动态扫描刷新一遍，显示 0..9999 */
+void smg_show(U16 value);           /* refresh ONE digit per call; shows 0..9999 */
 
-#endif /* SMG_H_ */
+#endif

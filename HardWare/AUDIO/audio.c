@@ -372,12 +372,3 @@ void audio_task(void)
         }
     }
 }
-
-U16 audio_key_check(void)
-{
-    if ((s_playing != 0U) && (key_scan() != 0U)) {
-        audio_stop();
-        return 1U;
-    }
-    return 0U;
-}

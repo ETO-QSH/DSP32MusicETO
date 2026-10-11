@@ -1,11 +1,7 @@
-/* ============================================================================
- *  key.h —— 板上 3x3 矩阵键盘（含软件消抖与按键沿检测）
- * ----------------------------------------------------------------------------
- *  硬件（普中 PZ-DSP28335-L，依据官方教程第 11 章）：
- *      行(输入,低有效) H1/H2/H3 = GPIO12/13/14（板上有 10K 上拉，内部上拉也打开）
- *      列(输出,低有效) L1/L2/L3 = GPIO48/49/50
- *      键位: 第1列 K1/K4/K7、第2列 K2/K5/K8、第3列 K3/K6/K9
- * ========================================================================== */
+/* key.h -- on-board 3x3 matrix keypad (debounce + press-edge detection)
+   hardware: rows (input, active low) H1/H2/H3 = GPIO12/13/14
+             cols (output, active low) L1/L2/L3 = GPIO48/49/50
+   layout : col1 = K1/K4/K7, col2 = K2/K5/K8, col3 = K3/K6/K9 */
 #ifndef KEY_H_
 #define KEY_H_
 
@@ -14,12 +10,7 @@
 #define KEY_NUM     9U
 
 void key_init(void);
+U16 key_scan(void);     /* raw read: 0 = none, 1..9 = K1..K9 */
+U16 key_task(void);     /* debounced press edge: key (1..9) or 0; call every loop */
 
-/* 直接读一次键值：0=无按键，1..9=K1..K9 */
-U16 key_scan(void);
-
-/* 带消抖与"按下沿"检测：检测到新按下返回键号(1..9)，否则返回 0。
-   需要周期性调用（本工程在主循环里每轮调一次，间隔约 8ms）。 */
-U16 key_task(void);
-
-#endif /* KEY_H_ */
+#endif
