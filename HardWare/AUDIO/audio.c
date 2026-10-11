@@ -66,17 +66,19 @@ static const U16 s_pitch_hz[49] = {          /* 右手：0,175,185,...,2489,2637
     1397U,1480U,1568U,1661U,1760U,1865U,1976U,2093U,2218U,2349U,2489U,2637U
 };
 
-static const U16 s_pitch_hz_l[50] = {        /* 左手：0,156,165,...,2349,2489 */
+static const U16 s_pitch_hz_l[50] = {        /* 左手：+12 半音（+1 八度）⇒ MIDI 39..87 = 78..1245 Hz */
     0U,
+      78U,  82U,  87U,  92U,  98U, 104U, 110U, 117U, 123U, 131U, 139U, 147U,
      156U, 165U, 175U, 185U, 196U, 208U, 220U, 233U, 247U, 262U, 277U, 294U,
      311U, 330U, 349U, 370U, 392U, 415U, 440U, 466U, 494U, 523U, 554U, 587U,
-     622U, 659U, 698U, 740U, 784U, 831U, 880U, 932U, 988U,1047U,1109U,1175U,
-    1245U,1319U,1397U,1480U,1568U,1661U,1760U,1865U,1976U,2093U,2218U,2349U,2489U
+     622U, 659U, 698U, 740U, 784U, 831U, 880U, 932U, 988U,1047U,1109U,1175U,1245U
 };
 typedef struct { U32 phase; U32 inc; U16 amp; U16 decay; U16 active; } AUDIO_VOICE;
 static AUDIO_VOICE s_v[AUDIO_CH][AUDIO_VOICES];
 static U16 s_decim[AUDIO_CH];
 static U16 s_gain[AUDIO_CH];        /* 1/n 定点（按活跃声部数归一化）*/
+/* 声道增益：左手降了 1 个八度，小喇叭低频效率低（约 -6dB），这里补回来 */
+static const U16 s_chgain[AUDIO_CH] = { 256U, 512U };   /* 0=右手 x1.0 ; 1=左手 x2.0 */
 
 static U16 s_pk_i[AUDIO_CH];        /* 打包表字下标（每事件 +2）*/
 static U32 s_left[AUDIO_CH];        /* 当前事件剩余采样数 */
@@ -142,6 +144,7 @@ static U16 synth_duty(U16 ch)
         }
     }
     mix = (mix * (S32)s_gain[ch]) >> 8;         /* 按声部数归一化（统一音量）*/
+    mix = (mix * (S32)s_chgain[ch]) >> 8;       /* ★ 声道增益（左手补偿低频损失）*/
     {
         S32 m = (mix >> 1) + (mix >> 2);        /* 3/4 满量程：±3000（中心 3000）*/
         S32 lim = (S32)(CMP_CENTER - 20U);      /* 线性区 ±2980 */
