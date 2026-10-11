@@ -10,7 +10,7 @@
 
 #define AUDIO_VOICES        6U          /* voice slots (4 chord + 2 release tails) */
 #define AUDIO_MAX_CHORD     4U
-#define AUDIO_AMP_PEAK      4000U
+#define AUDIO_AMP_PEAK      3000U
 
 /* legacy chord type (kept for reference; the packed tables are used instead) */
 typedef struct {

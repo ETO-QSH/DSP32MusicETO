@@ -6,9 +6,9 @@
  *    * K3 ：起停音乐（播放中再按 = 停止），并清零计数
  *    * 其它键 K1/K2/K4..K9 ：切换 LED 效果；【未播放时也清零计数】
  *    * 任意按键：LCD 第 2 行第 16 格显示按键号
- *    * 音乐：ePWM4A 150kHz 载波 + 周期中断喂 CMPA + 环形缓冲
+ *    * music: ePWM3 25 kHz carrier; one period ISR feeds CMPA (right) / CMPB (left)
  *            （打包曲表 3.4KB，播完自动从头循环）
- *    * 播放期间 GPIO6 归 ePWM，LCD 冻结；停止后不自动刷（只在按键时刷）
+ *    * during playback GPIO4/GPIO5 go to the ePWM; LCD is not refreshed then
  *  说明：
  *    * LCD 采用"整行重写"：定位命令只用 goto(line,0)（=0xC0，bit1=0）
  *      ⇒ 即使 LCD 的 DB1(GPIO3) 接触不良，字符也不会跑位
@@ -108,9 +108,9 @@ void app_task(void)
         g_key = 3U;
         if (audio_is_playing() != 0U) {
             audio_stop();
-            lcd_draw_all(3U);                       /* GPIO6 已交还，安全 */
+            lcd_draw_all(3U);                       /* GPIO4/GPIO5 handed back, safe */
         } else {
-            lcd_draw_all(3U);                       /* 启动前写，GPIO6 还归 LCD */
+            lcd_draw_all(3U);                       /* write before start: GPIO4/5 still belong to the LCD */
             audio_start();
         }
         g_value = 0U;
@@ -120,7 +120,7 @@ void app_task(void)
 
     if (ev != 0U) {                                 /* 其它键：切 LED 效果 */
         g_key = ev;
-        if (audio_is_playing() == 0U) {             /* 未播放时才写 LCD（播放中会抢 GPIO6）*/
+        if (audio_is_playing() == 0U) {             /* idle only: playback takes GPIO4/GPIO5 over */
             lcd_draw_all(ev);
         }
         g_effect = (U16)(ev - 1U);

@@ -5,11 +5,11 @@
  *  E 下降沿写入 → 等待 LCD 内部执行（普通指令约 37us，清屏约 1.52ms）
  *
  *  ★ 本驱动用"引脚表"逐位输出，所以任何一根线都能改接到别的 GPIO。
- *    这块板子上 GPIO6 同时是 LCD 的 DB4 和蜂鸣器的控制脚：
- *      - 不改线：靠 app.c 里"蜂鸣器响时不刷 LCD"互斥；
- *      - 改线（推荐）：把 LCD 第 11 脚(DB4) 掰出来接到空闲 GPIO，
- *        然后把下面 lcd_data_pin[4] 改成那个引脚号即可（如 15 = GPIO15），
- *        注意一定要先断开原来的 GPIO6，不能两根线直接并在一起。
+ *    note: during playback the audio engine takes GPIO4/GPIO5 (DB2/DB3),
+ *    so the LCD must not be written while playing; GPIO6 (DB4) stays ours.
+ *    any data pin can be moved to another GPIO by editing the table below,
+ *    e.g. lcd_data_pin[4] = 15U for GPIO15 (disconnect the old wire first).
+ *    Do not leave two GPIOs wired together.
  * ========================================================================== */
 #include "lcd1602.h"
 #include "delay.h"

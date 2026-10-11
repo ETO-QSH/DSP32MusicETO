@@ -45,12 +45,12 @@ static const S16 s_sine[64] = {
 /* ---------------- 音高索引 → 频率(Hz) ----------------
    索引 1..N：声道0=右手（s_song_right，base 52 ⇒ MIDI 53..100，不移调）
               声道1=左手（s_song_left ，base 27 ⇒ MIDI 27..75 再 +24 ⇒ 51..99）*/
-static const U16 s_pitch_hz[49] = {          /* 右手：0,175,185,...,2489,2637 */
+static const U16 s_pitch_hz[50] = {          /* 右手：0,175,185,...,2489,2637 */
     0U,
      175U, 185U, 196U, 208U, 220U, 233U, 247U, 262U, 277U, 294U, 311U, 330U,
      349U, 370U, 392U, 415U, 440U, 466U, 494U, 523U, 554U, 587U, 622U, 659U,
      698U, 740U, 784U, 831U, 880U, 932U, 988U,1047U,1109U,1175U,1245U,1319U,
-    1397U,1480U,1568U,1661U,1760U,1865U,1976U,2093U,2218U,2349U,2489U,2637U
+    1397U,1480U,1568U,1661U,1760U,1865U,1976U,2093U,2218U,2349U,2489U,2637U,2637U
 };
 
 static const U16 s_pitch_hz_l[50] = {        /* 左手：+12 半音（+1 八度）⇒ MIDI 39..87 = 78..1245 Hz */
@@ -65,7 +65,7 @@ static AUDIO_VOICE s_v[AUDIO_CH][AUDIO_VOICES];
 static U16 s_decim[AUDIO_CH];
 static U16 s_gain[AUDIO_CH];        /* 1/n 定点（按活跃声部数归一化）*/
 /* 声道增益：左手降了 1 个八度，小喇叭低频效率低（约 -6dB），这里补回来 */
-static const U16 s_chgain[AUDIO_CH] = { 256U, 512U };   /* 0=右手 x1.0 ; 1=左手 x2.0 */
+static const U16 s_chgain[AUDIO_CH] = { 256U, 256U };   /* per-voice gain handles the balance */
 
 static U16 s_pk_i[AUDIO_CH];        /* 打包表字下标（每事件 +2）*/
 static U32 s_left[AUDIO_CH];        /* 当前事件剩余采样数 */
@@ -152,7 +152,7 @@ static void release_all(U16 ch)
     }
 }
 
-static void start_chord(U16 ch, const U16 *freq)
+static void start_chord(U16 ch, const U16 *freq, const U16 *idx)
 {
     U16 i, v;
 
@@ -170,7 +170,12 @@ static void start_chord(U16 ch, const U16 *freq)
         }
         s_v[ch][v].phase = 0UL;
         s_v[ch][v].inc   = freq_inc(freq[i]);
-        s_v[ch][v].amp   = AUDIO_AMP_PEAK;
+        {
+        U16 vt = (ch == 0U) ? 49U : 47U;   /* reference = highest note of this hand */
+        U16 g  = (idx[i] == 0U) ? 256U
+               : (U16)(256U + ((U32)(vt - idx[i]) * 512UL) / 48UL);
+        s_v[ch][v].amp = (U16)(((U32)AUDIO_AMP_PEAK * (U32)g) >> 8);
+    }
         s_v[ch][v].decay = decay_coeff(900U);
         s_v[ch][v].active = 1U;
     }
@@ -184,17 +189,18 @@ static U16 next_event(U16 ch)
     U16 w0 = tbl[s_pk_i[ch]];
     U16 w1 = tbl[s_pk_i[ch] + 1U];
     U16 f[4];
+    U16 idx[4];
     U16 k, v;
 
     if ((w0 == 0U) && (w1 == 0U)) { return 0U; }        /* 表尾 (0,0) */
     s_pk_i[ch] = (U16)(s_pk_i[ch] + 2U);
 
     k = 0U;                                   /* 6bit 跨字打包：v0|v1|v2低位 / v2高位|v3|时值 */
-    v = (U16)( w0        & 0x3FU); f[k] = ((v >= 1U) && (v <= 49U)) ? pitch[v] : 0U; k++;
-    v = (U16)((w0 >> 6)  & 0x3FU); f[k] = ((v >= 1U) && (v <= 49U)) ? pitch[v] : 0U; k++;
-    v = (U16)(((w0 >> 12) & 0x0FU) | ((w1 & 0x03U) << 4));
+    v = (U16)( w0        & 0x3FU); idx[k] = v; f[k] = ((v >= 1U) && (v <= 49U)) ? pitch[v] : 0U; k++;
+    v = (U16)((w0 >> 6)  & 0x3FU); idx[k] = v; f[k] = ((v >= 1U) && (v <= 49U)) ? pitch[v] : 0U; k++;
+    v = (U16)(((w0 >> 12) & 0x0FU) | ((w1 & 0x03U) << 4)); idx[k] = v;
     f[k] = ((v >= 1U) && (v <= 49U)) ? pitch[v] : 0U; k++;
-    v = (U16)((w1 >> 2)  & 0x3FU); f[k] = ((v >= 1U) && (v <= 49U)) ? pitch[v] : 0U;
+    v = (U16)((w1 >> 2)  & 0x3FU); idx[k] = v; f[k] = ((v >= 1U) && (v <= 49U)) ? pitch[v] : 0U;
 
     {   /* 本声道本事件的最高频率；两声道再取 max 供 LED 使用 */
         U16 k2;
@@ -203,7 +209,7 @@ static U16 next_event(U16 ch)
         g_audio_freq = (s_fmax[0] > s_fmax[1]) ? s_fmax[0] : s_fmax[1];
     }
 
-    start_chord(ch, f);
+    start_chord(ch, f, idx);
     s_left[ch] = (U32)((w1 >> 8) & 0xFFU) * (AUDIO_SR / 12UL);   /* 时值：250/3ms ⇒ u*SR/12 */
     g_audio_events++;
     return 1U;
