@@ -88,7 +88,7 @@ void app_task(void)
     audio_task();
 
     /* 3) 计数 0..9999（不在这里请求刷 LCD ⇒ 不播放时 LCD 保持静止）*/
-    if ((U16)(s_ms - s_last_count) >= ((audio_is_playing() != 0U) ? 512U : (U16)(APP_COUNT_MS * 16U))) {
+    if ((U16)(s_ms - s_last_count) >= ((audio_is_playing() != 0U) ? 320U : (U16)(APP_COUNT_MS * 16U))) {
         s_last_count = s_ms;
         g_value = (U16)((g_value + 1U) % 10000U);
     }
