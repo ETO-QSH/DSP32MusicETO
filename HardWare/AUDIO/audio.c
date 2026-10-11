@@ -1,13 +1,13 @@
 /* ============================================================================
- *  HardWare/AUDIO/audio.c —— 硬件 PWM 音频引擎（ePWM4 周期中断 + 环形缓冲）
+ *  HardWare/AUDIO/audio.c —— 硬件 PWM 音频引擎（ePWM3 周期中断 + 环形缓冲）
  * ----------------------------------------------------------------------------
  *  为什么不用 DMA：
  *      F2833x 的 DMA 只能访问 RAM/XINTF（官方 3 个 DMA 例程目标全是 RAM），
  *      写外设寄存器无效 ⇒ "DMA→CMPA" 在这颗芯片上不可行。
  *  本实现（全部已在硬件上验证）：
- *      · ePWM4A (GPIO6) 出 150kHz 载波，TBPRD = 999（150MHz/1000）
- *      · 每周期产生中断（EPWM4_INT = INT3.4），ISR 从环形缓冲取一个采样写 CMPA
- *      · CMPA 必须用真地址 0x68C9：vendor 的 &EPwm4Regs.CMPA 会算成 0x68C8 ✗
+ *      · ePWM3A (GPIO4) 出 25kHz 载波，TBPRD = 5999（150MHz/6000）
+ *      · 每周期产生中断（EPWM3_INT = INT3.3），ISR 从环形缓冲取一个采样写 CMPA
+ *      · CMPA 必须用真地址 0x68C9：vendor 的 &EPwm3Regs.CMPA 会算成 0x68C8 ✗
  *      · ISR 约 40~60 周期 / 800 周期 ⇒ 约 7% CPU
  *      · 主循环 audio_task() 追着 ISR 的读指针合成（正弦表+包络+和弦），约 12%
  *  参考：Example14_DSP2833x_Epwm_Time_Interrupt（官方能跑的中断例程）
@@ -40,7 +40,8 @@ static const U16 s_pitch_hz[49] = {
 #define RING_LEN        2048U                     /* 2^n；13.6ms，够主循环追 */
 #define RING_MASK       (RING_LEN - 1U)
 #define CMP_CENTER      3000U                      /* 50% = 静音（25kHz 载波） */
-#define AUDIO_CMPA      (*(volatile Uint16 *)0x68C9UL)   /* 真·CMPA */
+#define AUDIO_CMPA      (*(volatile Uint16 *)0x6889UL)   /* 真·CMPA（EPWM3 基址 0x6880 + 9）*/
+#define AUDIO_CMPB      (*(volatile Uint16 *)0x688AUL)   /* 真·CMPB（+10）*/
 
 static U16 s_ring[RING_LEN];
 static volatile U16 s_head = 0U;                  /* ISR 消费位置 */
@@ -76,11 +77,12 @@ interrupt void audio_isr(void)
 {
     if (s_head != s_tail) {
         AUDIO_CMPA = s_ring[s_head];
+    AUDIO_CMPB = s_ring[s_head];   /* 2a：B 镜像 A（验证第二路硬件通路）*/
         s_head = (U16)((s_head + 1U) & RING_MASK);
         g_audio_samples++;
     }
-    EPwm4Regs.ETCLR.bit.INT = 1;
-    PieCtrlRegs.PIEACK.bit.ACK3 = 1;              /* 组3（EPWM4_INT = INT3.4）*/
+    EPwm3Regs.ETCLR.bit.INT = 1;
+    PieCtrlRegs.PIEACK.bit.ACK3 = 1;              /* 组3（EPWM3_INT = INT3.3）*/
 }
 
 static U16 decay_coeff(U16 tc_ms)
@@ -197,34 +199,36 @@ void audio_init(void)
     U16 i;
 
     EALLOW;
-    GpioCtrlRegs.GPAMUX1.bit.GPIO6 = 1;           /* GPIO6 = EPWM4A */
-    GpioCtrlRegs.GPADIR.bit.GPIO6  = 1;
-    GpioCtrlRegs.GPAPUD.bit.GPIO6  = 0;
     SysCtrlRegs.PCLKCR0.bit.TBCLKSYNC = 0;
     EDIS;
 
-    EPwm4Regs.TBCTL.bit.SYNCOSEL  = 3;
-    EPwm4Regs.TBCTL.bit.PHSEN     = 0;
-    EPwm4Regs.TBPHS.half.TBPHS    = 0;
-    EPwm4Regs.TBCTR               = 0;
-    EPwm4Regs.TBPRD               = AUDIO_TBPRD;
-    EPwm4Regs.TBCTL.bit.CTRMODE   = 0;
-    EPwm4Regs.TBCTL.bit.HSPCLKDIV = 0;
-    EPwm4Regs.TBCTL.bit.CLKDIV    = 0;
-    EPwm4Regs.CMPCTL.bit.SHDWAMODE = 0;
-    EPwm4Regs.CMPCTL.bit.LOADAMODE = 0;
+    EPwm3Regs.TBCTL.bit.SYNCOSEL  = 3;
+    EPwm3Regs.TBCTL.bit.PHSEN     = 0;
+    EPwm3Regs.TBPHS.half.TBPHS    = 0;
+    EPwm3Regs.TBCTR               = 0;
+    EPwm3Regs.TBPRD               = AUDIO_TBPRD;
+    EPwm3Regs.TBCTL.bit.CTRMODE   = 0;
+    EPwm3Regs.TBCTL.bit.HSPCLKDIV = 0;
+    EPwm3Regs.TBCTL.bit.CLKDIV    = 0;
+    EPwm3Regs.CMPCTL.bit.SHDWAMODE = 0;
+    EPwm3Regs.CMPCTL.bit.LOADAMODE = 0;
+    EPwm3Regs.CMPCTL.bit.SHDWBMODE = 0;
+    EPwm3Regs.CMPCTL.bit.LOADBMODE = 0;
     AUDIO_CMPA                     = CMP_CENTER;
-    EPwm4Regs.AQCTLA.bit.ZRO      = 2;            /* AQ_SET   on zero    */
-    EPwm4Regs.AQCTLA.bit.CAU      = 1;            /* AQ_CLEAR on CMPA up */
-    EPwm4Regs.ETSEL.bit.INTSEL    = 1;            /* ET_CTR_ZERO */
-    EPwm4Regs.ETSEL.bit.INTEN     = 1;
-    EPwm4Regs.ETPS.bit.INTPRD     = 1;            /* ET_1ST */
+    AUDIO_CMPB                     = CMP_CENTER;
+    EPwm3Regs.AQCTLA.bit.ZRO      = 2;            /* AQ_SET   on zero    */
+    EPwm3Regs.AQCTLA.bit.CAU      = 1;            /* AQ_CLEAR on CMPA up */
+    EPwm3Regs.AQCTLB.bit.ZRO      = 2;            /* B: set   on zero */
+    EPwm3Regs.AQCTLB.bit.CBU      = 1;            /* B: clear on CMPB up */
+    EPwm3Regs.ETSEL.bit.INTSEL    = 1;            /* ET_CTR_ZERO */
+    EPwm3Regs.ETSEL.bit.INTEN     = 1;
+    EPwm3Regs.ETPS.bit.INTPRD     = 1;            /* ET_1ST */
 
     EALLOW;
     SysCtrlRegs.PCLKCR0.bit.TBCLKSYNC = 1;
-    PieVectTable.EPWM4_INT = &audio_isr;          /* EPWM4_INT = INT3.4 */
+    PieVectTable.EPWM3_INT = &audio_isr;          /* EPWM3_INT = INT3.3 */
     EDIS;
-    PieCtrlRegs.PIEIER3.bit.INTx4 = 1;
+    PieCtrlRegs.PIEIER3.bit.INTx3 = 1;
     PieCtrlRegs.PIEACK.bit.ACK3 = 1;
     IER |= M_INT3;
     EINT;
@@ -237,14 +241,20 @@ void audio_stop(void)
 {
     U16 i;
 
-    EPwm4Regs.TBCTL.bit.CTRMODE = 3;              /* freeze */
+    EPwm3Regs.TBCTL.bit.CTRMODE = 3;              /* freeze */
     AUDIO_CMPA = CMP_CENTER;
-    PieCtrlRegs.PIEIER3.bit.INTx4 = 0;
+    PieCtrlRegs.PIEIER3.bit.INTx3 = 0;
 
     EALLOW;
-    GpioCtrlRegs.GPAMUX1.bit.GPIO6 = 0;           /* GPIO6 交还 LCD(DB4) */
+    GpioCtrlRegs.GPAMUX1.bit.GPIO4 = 0;           /* GPIO4 交还 LCD(DB2) */
     EDIS;
-    GpioDataRegs.GPACLEAR.bit.GPIO6 = 1;
+    GpioCtrlRegs.GPADIR.bit.GPIO4 = 1;
+    GpioDataRegs.GPACLEAR.bit.GPIO4 = 1;
+    EALLOW;
+    GpioCtrlRegs.GPAMUX1.bit.GPIO5 = 0;           /* GPIO5 交还 LCD(DB3) */
+    EDIS;
+    GpioCtrlRegs.GPADIR.bit.GPIO5 = 1;
+    GpioDataRegs.GPACLEAR.bit.GPIO5 = 1;
 
     for (i = 0U; i < AUDIO_VOICES; i++) { s_v[i].active = 0U; }
     s_playing = 0U;
@@ -257,6 +267,15 @@ U16 audio_is_playing(void)
 
 void audio_start(void)
 {
+    /* ★ 播放期间接管 GPIO4 = EPWM3A（停止时交还 LCD 的 DB2）*/
+    EALLOW;                                      /* ★ GPIO 复用寄存器受 EALLOW 保护，必须包起来 */
+    GpioCtrlRegs.GPAMUX1.bit.GPIO4 = 1;
+    GpioCtrlRegs.GPADIR.bit.GPIO4  = 1;
+    GpioCtrlRegs.GPAPUD.bit.GPIO4  = 0;
+    GpioCtrlRegs.GPAMUX1.bit.GPIO5 = 1;           /* GPIO5 = EPWM3B */
+    GpioCtrlRegs.GPADIR.bit.GPIO5  = 1;
+    GpioCtrlRegs.GPAPUD.bit.GPIO5  = 0;
+    EDIS;
     U16 i;
 
     if (s_playing != 0U) { return; }
