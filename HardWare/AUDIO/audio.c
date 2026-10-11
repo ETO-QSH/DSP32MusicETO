@@ -17,14 +17,23 @@
 #include "audio.h"
 #include "delay.h"
 #include "key.h"
-#include "song_fuwa_packed.h"     /* 打包曲表：每事件 2 字（4 字节）= 3.4KB ✓ 原经典表 7.3KB */
+#include "song_tables.h"     /* 打包曲表：每事件 2 字（4 字节）= 3.4KB ✓ 原经典表 7.3KB */
 
 /* 音高索引 1..24 = C6..B7（值 = MIDI-83），与生成脚本 note_hz 公式一致 */
-static const U16 s_pitch_hz[25] = {
+/* 音高索引 1..49 = MIDI 27..75（v = MIDI - SONG_L_BASE(27) + 1，6bit 无折叠）*/
+/* 播放用表：音高索引 1..49 + 整体移调 +24 半音（+2 八度）
+   原始 MIDI 27..75 → 实际发声 MIDI 51..99 = 156..2489 Hz
+   移调只为适配压电片的可闻频段（不改音程 ⇒ 旋律精确）*/
+/* 播放用表：右手曲表 s_song_right，v = MIDI - SONG_R_BASE(52) + 1 (1..48)
+   音域 MIDI 53..100 = 175..2637 Hz（未移调：本身就是压电片的最佳频段）*/
+static const U16 s_pitch_hz[49] = {
     0U,
-    1047U,1109U,1175U,1245U,1319U,1397U,1480U,1568U,1661U,1760U,1865U,1976U,
-    2093U,2217U,2349U,2489U,2637U,2794U,2960U,3136U,3322U,3520U,3729U,3951U
+     175U, 185U, 196U, 208U, 220U, 233U, 247U, 262U, 277U, 294U, 311U, 330U,
+     349U, 370U, 392U, 415U, 440U, 466U, 494U, 523U, 554U, 587U, 622U, 659U,
+     698U, 740U, 784U, 831U, 880U, 932U, 988U,1047U,1109U,1175U,1245U,1319U,
+    1397U,1480U,1568U,1661U,1760U,1865U,1976U,2093U,2218U,2349U,2489U,2637U
 };
+
 
 #define AUDIO_TBPRD     999U                       /* 150MHz/1000 = 150kHz */
 #define AUDIO_SR        150000UL
@@ -158,8 +167,8 @@ static void start_chord(const U16 *freq)
 
 static U16 next_event(void)
 {
-    U16 w0 = s_song_packed[s_pk_i];
-    U16 w1 = s_song_packed[s_pk_i + 1U];
+    U16 w0 = s_song_right[s_pk_i];
+    U16 w1 = s_song_right[s_pk_i + 1U];
     U16 f[4];
     U16 k, v;
 
@@ -167,14 +176,14 @@ static U16 next_event(void)
     s_pk_i = (U16)(s_pk_i + 2U);
 
     k = 0U;
-    v = (U16)( w0        & 0x1FU); f[k] = ((v >= 1U) && (v <= 24U)) ? s_pitch_hz[v] : 0U; k++;
-    v = (U16)((w0 >> 5)  & 0x1FU); f[k] = ((v >= 1U) && (v <= 24U)) ? s_pitch_hz[v] : 0U; k++;
-    v = (U16)((w0 >> 10) & 0x1FU); f[k] = ((v >= 1U) && (v <= 24U)) ? s_pitch_hz[v] : 0U; k++;
-    v = (U16)((w1 >> 8)  & 0x1FU); f[k] = ((v >= 1U) && (v <= 24U)) ? s_pitch_hz[v] : 0U;
+    v = (U16)( w0        & 0x3FU); f[k] = ((v >= 1U) && (v <= 48U)) ? s_pitch_hz[v] : 0U; k++;
+    v = (U16)((w0 >> 6)  & 0x3FU); f[k] = ((v >= 1U) && (v <= 48U)) ? s_pitch_hz[v] : 0U; k++;
+    v = (U16)((w0 >> 12) & 0x3FU); f[k] = ((v >= 1U) && (v <= 48U)) ? s_pitch_hz[v] : 0U; k++;
+    v = (U16)( w1        & 0x3FU); f[k] = ((v >= 1U) && (v <= 48U)) ? s_pitch_hz[v] : 0U;
 
     start_chord(f);
     g_audio_events++;
-    s_left = (U32)(w1 & 0xFFU) * (AUDIO_SR / 12UL);      /* 时值单位 = 250/3ms ⇒ 采样 = u*SR/12 ✓ */
+    s_left = (U32)((w1 >> 6) & 0xFFU) * (AUDIO_SR / 12UL);      /* 时值单位 = 250/3ms ⇒ 采样 = u*SR/12 ✓ */
     return 1U;
 }
 
