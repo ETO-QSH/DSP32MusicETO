@@ -1,5 +1,5 @@
 /* ============================================================================
- *  key.c 鈥斺€?3x3 鐭╅樀閿洏鎵弿
+ *  key.c -- on-board 3x3 matrix keypad (debounce + press edge)
  * ========================================================================== */
 #include "DSP2833x_Device.h"
 #include "key.h"
@@ -26,17 +26,17 @@ static U16 key_latched  = 0U;
 void key_init(void)
 {
     EALLOW;
-    /* 琛岋細鏅€?IO + 杈撳叆 + 浣胯兘鍐呴儴涓婃媺 */
+    /* rows: GPIO (input) + pull-up enabled */
     GpioCtrlRegs.GPAMUX1.all &= ~KEY_MUX1_ROWS;
     GpioCtrlRegs.GPADIR.all  &= ~KEY_DAT_ROWS;
     GpioCtrlRegs.GPAPUD.all  &= ~KEY_DAT_ROWS;
-    /* 鍒楋細鏅€?IO + 杈撳嚭锛堥粯璁よ緭鍑洪珮锛?*/
+    /* cols: GPIO (output), driven low one at a time */
     GpioCtrlRegs.GPBMUX2.all &= ~KEY_MUX2_COLS;
     GpioCtrlRegs.GPBDIR.all  |=  KEY_DAT_COLS;
     GpioCtrlRegs.GPBPUD.all  &= ~KEY_DAT_COLS;
     EDIS;
 
-    GpioDataRegs.GPBSET.all = KEY_DAT_COLS;              /* 涓夊垪鍏ㄩ珮 */
+    GpioDataRegs.GPBSET.all = KEY_DAT_COLS;              /* all cols high */
 }
 
 U16 key_scan(void)
@@ -46,8 +46,8 @@ U16 key_scan(void)
     U16 key = 0U;
 
     for (col = 0U; col < 3U; col++) {
-        GpioDataRegs.GPBSET.all   = KEY_DAT_COLS;                                /* 涓夊垪鍏ㄩ珮 */
-        GpioDataRegs.GPBCLEAR.all = B_BIT((U16)(KEY_COL1_PIN + col));            /* 褰撳墠鍒楁媺浣?*/
+        GpioDataRegs.GPBSET.all   = KEY_DAT_COLS;                                /* all cols high */
+        GpioDataRegs.GPBCLEAR.all = B_BIT((U16)(KEY_COL1_PIN + col));            /* drive this col low */
         delay_us(30U);                                          /* 绛夎绾跨ǔ瀹?*/
         rows = GpioDataRegs.GPADAT.all;
 
@@ -64,7 +64,7 @@ U16 key_scan(void)
             break;
         }
     }
-    GpioDataRegs.GPBSET.all = KEY_DAT_COLS;                                      /* 鎭㈠涓夊垪鍏ㄩ珮 */
+    GpioDataRegs.GPBSET.all = KEY_DAT_COLS;                                      /* all cols high */
     return key;
 }
 
@@ -82,7 +82,7 @@ U16 key_task(void)
         key_stable = 0U;
     }
 
-    /* 杩炵画 2 娆¤鏁颁竴鑷翠笖闈?0 鈫?璁ゅ畾涓轰竴娆?鎸変笅娌? */
+    /* needs periodic calls: twice in a row with >= 2 scans of debounce */
     if ((key_stable >= 2U) && (now != 0U) && (now != key_latched)) {
         key_latched = now;
         event = now;

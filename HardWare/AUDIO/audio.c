@@ -1,28 +1,15 @@
-/* ============================================================================
- *  audio.c —— 硬件 PWM 音频引擎【双声道版】
- * ----------------------------------------------------------------------------
- *  硬件：ePWM3 一个模块，两个独立输出
- *      GPIO4 = EPWM3A = CMPA（真地址 0x6889 = 基址 0x6880 + 9）→ 声道0 = 右手谱
- *      GPIO5 = EPWM3B = CMPB（真地址 0x688A = 基址 0x6880 + 10）→ 声道1 = 左手谱
- *      载波 25kHz（TBPRD = 5999 = 150MHz/6000），每周期中断一次
- *      ISR 从两个环形缓冲各取一个采样，分别写 CMPA / CMPB
- *      ⇒ 两手共用同一个载波 ⇒ 天然同步，不会漂移 ✓
- *
- *  软件：两声道各自独立的状态（数组 + ch 参数）
- *      s_ring[2][2048] / s_head[2] / s_tail[2]
- *      s_v[2][AUDIO_VOICES] / s_decim[2] / s_gain[2]
- *      s_pk_i[2] / s_left[2]
- *      声道0 读 s_song_right + s_pitch_hz  （原音域 175~2637Hz）
- *      声道1 读 s_song_left  + s_pitch_hz_l（+24 半音 156~2489Hz）
- *      两张表同起点、同终点 ⇒ 各自循环也永远同步
- *
- *  坑（务必牢记）：
- *      · GPIO 的 MUX/DIR/PUD 受 EALLOW 保护，写入必须用 EALLOW/EDIS 包住，
- *        否则写入被静默忽略 ⇒ 引脚恒 0V、完全无声
- *      · EPWM2 基址是 0x6840，写 0x6869 会打到 EPWM2 的 CMPA 上（曾致无声）
- *      · 本芯片 DMA 不能写外设寄存器 ⇒ "DMA→CMPA" 不可行
- *      · GPIO4/GPIO5 同时是 LCD 的 DB2/DB3 ⇒ 沿用规则：播放中不写 LCD
- * ========================================================================== */
+/* audio.c -- hardware-PWM audio engine (dual channel)
+   hardware: ePWM3, one module + two outputs
+             GPIO4 = EPWM3A = CMPA (true addr 0x6889) -> ch0 = right hand
+             GPIO5 = EPWM3B = CMPB (true addr 0x688A) -> ch1 = left hand
+             carrier 25 kHz (TBPRD 5999); ONE ISR feeds both -> never drift
+   tables  : ch0 = s_song_right + s_pitch_hz   (native, 175..2637 Hz)
+             ch1 = s_song_left  + s_pitch_hz_l (+12 semitones, 78..1245 Hz)
+   PITFALLS: (1) GPIO MUX/DIR/PUD writes need EALLOW/EDIS, else silently ignored
+                 (pin stays 0 V = completely silent)
+             (2) EPWM2 base is 0x6840: 0x6869 hits EPWM2 CMPA, not EPWM3
+             (3) DMA cannot write peripheral registers on this chip
+             (4) GPIO4/GPIO5 are also LCD DB2/DB3 => no LCD writes while playing */
 #include "DSP2833x_Device.h"
 #include "DSP2833x_Examples.h"
 #include "audio.h"

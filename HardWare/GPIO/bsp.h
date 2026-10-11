@@ -1,53 +1,34 @@
-/* ============================================================================
- *  bsp.h —— 板级底层：MCU 寄存器地址映射 + 位掩码换算 + 类型定义
- * ----------------------------------------------------------------------------
- *  芯片: TMS320F28335 (普中 PZ-DSP28335-L)
- *
- *  寄存器地址来源（均已交叉验证）:
- *    - TI 官方 GEL      : ccs_base/emulation/gel/f28335.gel
- *    - CCS 官方寄存器库 : targetdb/Modules/C2000/28x3x_GPIO_Registers.xml
- *                         targetdb/Modules/C2000/28x3x_System_Control_Registers.xml
- *    - CCS 官方位域数据 : c2000-idea/.../f2833x_sysctrl_registers.js
- *      (PCLKCR3: bit8..10=CPUTIMER0/1/2ENCLK, bit11=DMAENCLK,
- *                bit12=XINTFENCLK, bit13=GPIOINENCLK)
- *    - GPIO 数据寄存器为 32 位: GPADAT=0x6FC0 GPASET=0x6FC2 GPACLEAR=0x6FC4
- *                              GPBDAT=0x6FC8 GPBSET=0x6FCA GPBCLEAR=0x6FCC
- *                              GPCDAT=0x6FD0 GPCSET=0x6FD2 GPCCLEAR=0x6FD4
- * ========================================================================== */
+/* bsp.h -- board support: types + absolute-address registers + pin helpers
+   chip: TMS320F28335 (PZ-DSP28335-L board)
+   addresses cross-checked against TI GEL / CCS targetdb / bitfield data */
+
 #ifndef BSP_H_
 #define BSP_H_
 
-typedef unsigned int  U16;      /* C28x: int = 16 位 */
-typedef unsigned long U32;      /* C28x: long = 32 位 */
-typedef unsigned char U8;       /* C28x: char = 16 位，但只用低 8 位给外设 */
-typedef int           S16;      /* 16 位有符号 */
-typedef long          S32;      /* 32 位有符号 */
+typedef unsigned int  U16;      /* C28x: int = 16 bit */
+typedef unsigned long U32;      /* C28x: long = 32 bit */
+typedef unsigned char U8;       /* C28x: char = 16 bit; only low 8 used for peripherals */
+typedef int           S16;
+typedef long          S32;
 
-/* ------------------------------------------------------------------ */
-/* 系统控制寄存器（基址 0x7010，字节偏移）                              */
-/* ------------------------------------------------------------------ */
-/* ------------------------------------------------------------------ *
- *  ★ 迁移开关：以下"绝对地址寄存器宏"仅供**尚未迁移到官方 API** 的模块  *
- *  使用。若某个 .c 先 #include "DSP2833x_Device.h"（官方头定义           *
- *  DSP2833x_DEVICE_H），则下列宏自动失效，该模块必须改用官方结构体：     *
- *      GpioCtrlRegs / GpioDataRegs / SysCtrlRegs / CpuTimer0Regs / …     *
- *  原因：宏名与官方结构体成员同名（PLLCR/PCLKCR3/WDCR/GPADIR/…），同时   *
- *        存在时预处理器会把官方结构体定义替换成垃圾 → 语法错。            *
- * ------------------------------------------------------------------ */
+/* The absolute-address defines below are only for modules that have NOT been
+   migrated to the official structures. If a .c includes DSP2833x_Device.h
+   (which defines DSP2833x_DEVICE_H), they vanish automatically, because their
+   names collide with the official struct members (PLLCR/PCLKCR3/WDCR/GPADIR...)
+   and the preprocessor would otherwise wreck the official header. */
 #ifndef DSP2833x_DEVICE_H
+
+/* ---- system control (base 0x7010, word offsets) ---- */
 #define SYS_BASE    0x7010UL
-#define PLLSTS      (*(volatile U16 *)(SYS_BASE +  1))   /* 0x7011 bit0=PLLLOCKS */
-#define PCLKCR3     (*(volatile U16 *)(SYS_BASE + 16))   /* 0x7020 外设时钟控制3 */
+#define PLLSTS      (*(volatile U16 *)(SYS_BASE +  1))   /* 0x7011 bit0 = PLLLOCKS */
+#define PCLKCR3     (*(volatile U16 *)(SYS_BASE + 16))   /* 0x7020 peripheral clock 3 */
 #define WDCNTR      (*(volatile U16 *)(SYS_BASE + 19))   /* 0x7023 */
 #define WDKEY       (*(volatile U16 *)(SYS_BASE + 21))   /* 0x7025 */
 #define WDCR        (*(volatile U16 *)(SYS_BASE + 25))   /* 0x7029 */
 #define PLLCR       (*(volatile U16 *)(SYS_BASE + 17))   /* 0x7021 */
-
 #define PCLKCR3_GPIOINENCLK   0x2000U    /* bit13 */
 
-/* ------------------------------------------------------------------ */
-/* FLASH 寄存器（基址 0x0A80）                                          */
-/* ------------------------------------------------------------------ */
+/* ---- flash registers (base 0x0A80) ---- */
 #define FLASH_BASE  0x0A80UL
 #define FOPT        (*(volatile U16 *)(FLASH_BASE + 0x0))
 #define FPWR        (*(volatile U16 *)(FLASH_BASE + 0x2))
@@ -57,14 +38,12 @@ typedef long          S32;      /* 32 位有符号 */
 #define FBANKWAIT   (*(volatile U16 *)(FLASH_BASE + 0x6))
 #define FOTPWAIT    (*(volatile U16 *)(FLASH_BASE + 0x7))
 
-/* ------------------------------------------------------------------ */
-/* GPIO 控制寄存器（基址 0x6F80，32 位，受 EALLOW 保护）                */
-/* ------------------------------------------------------------------ */
+/* ---- GPIO control (base 0x6F80, 32-bit, EALLOW-protected) ---- */
 #define GPIO_BASE   0x6F80UL
-#define GPAMUX1     (*(volatile U32 *)(GPIO_BASE +  6))  /* 0x6F86 GPIO0-15  每脚2位 */
+#define GPAMUX1     (*(volatile U32 *)(GPIO_BASE +  6))  /* 0x6F86 GPIO0-15  2 bit/pin */
 #define GPAMUX2     (*(volatile U32 *)(GPIO_BASE +  8))  /* 0x6F88 GPIO16-31 */
-#define GPADIR      (*(volatile U32 *)(GPIO_BASE + 10))  /* 0x6F8A GPIO0-31  每脚1位 */
-#define GPAPUD      (*(volatile U32 *)(GPIO_BASE + 12))  /* 0x6F8C 0=使能上拉 */
+#define GPADIR      (*(volatile U32 *)(GPIO_BASE + 10))  /* 0x6F8A GPIO0-31  1 bit/pin */
+#define GPAPUD      (*(volatile U32 *)(GPIO_BASE + 12))  /* 0x6F8C 0 = pull-up enabled */
 #define GPBMUX1     (*(volatile U32 *)(GPIO_BASE + 22))  /* 0x6F96 GPIO32-47 */
 #define GPBMUX2     (*(volatile U32 *)(GPIO_BASE + 24))  /* 0x6F98 GPIO48-63 */
 #define GPBDIR      (*(volatile U32 *)(GPIO_BASE + 26))  /* 0x6F9A GPIO32-63 */
@@ -74,10 +53,8 @@ typedef long          S32;      /* 32 位有符号 */
 #define GPCDIR      (*(volatile U32 *)(GPIO_BASE + 42))  /* 0x6FAA GPIO64-87 */
 #define GPCPUD      (*(volatile U32 *)(GPIO_BASE + 44))  /* 0x6FAC */
 
-/* ------------------------------------------------------------------ */
-/* GPIO 数据寄存器（32 位，不需 EALLOW）  写 1 有效、写 0 无效          */
-/* ------------------------------------------------------------------ */
-#define GPADAT      (*(volatile U32 *)(GPIO_BASE + 64))  /* 0x6FC0 读引脚电平 */
+/* ---- GPIO data (32-bit, NOT EALLOW-protected; writing 1 acts, writing 0 does not) ---- */
+#define GPADAT      (*(volatile U32 *)(GPIO_BASE + 64))  /* 0x6FC0 read pin levels */
 #define GPASET      (*(volatile U32 *)(GPIO_BASE + 66))  /* 0x6FC2 */
 #define GPACLEAR    (*(volatile U32 *)(GPIO_BASE + 68))  /* 0x6FC4 */
 #define GPATOGGLE   (*(volatile U32 *)(GPIO_BASE + 70))  /* 0x6FC6 */
@@ -93,11 +70,7 @@ typedef long          S32;      /* 32 位有符号 */
 #define EALLOW  asm(" EALLOW")
 #define EDIS    asm(" EDIS")
 
-/* ------------------------------------------------------------------ */
-/* CPU 定时器 CPU-Timer0（基址 0x0C00）                                 */
-/*   地址来源: CCS targetdb/Modules/C2000/C2000_CPU_Timer_Registers.xml */
-/*   TIM offset0(32bit) PRD offset2(32bit) TCR offset4 TPR offset6      */
-/* ------------------------------------------------------------------ */
+/* ---- CPU Timer0 (base 0x0C00) : TIM 0(32) PRD 2(32) TCR 4 TPR 6 ---- */
 #define TIMER0_BASE   0x0C00UL
 #define T0_TIM        (*(volatile U32 *)(TIMER0_BASE + 0x0U))
 #define T0_PRD        (*(volatile U32 *)(TIMER0_BASE + 0x2U))
@@ -105,20 +78,15 @@ typedef long          S32;      /* 32 位有符号 */
 #define T0_TPR        (*(volatile U16 *)(TIMER0_BASE + 0x6U))
 #define T0_TPRH       (*(volatile U16 *)(TIMER0_BASE + 0x7U))
 
-/* CPU-Timer 控制位（依据 CCS 位域数据 f2833x_cputimers_registers.js：
-   TSS shift4 / TIE shift14 / TIF shift15）—— TIE 是 bit14，不是 bit0！ */
-#define TCR_TSS       0x0010U   /* bit4  1 = 停止计数 */
-#define TCR_TRB       0x0020U   /* bit5  1 = 重装（自清） */
-#define TCR_TIE       0x4000U   /* bit14 定时器中断使能 */
-#define TCR_TIF       0x8000U   /* bit15 中断标志（写 1 清除） */
-
+/* TCR bits: note TIE is bit14, not bit0 */
+#define TCR_TSS       0x0010U   /* bit4  1 = stop */
+#define TCR_TRB       0x0020U   /* bit5  1 = reload */
+#define TCR_TIE       0x4000U   /* bit14 timer int enable */
+#define TCR_TIF       0x8000U   /* bit15 int flag (write 1 to clear) */
 #define PCLKCR3_CPUTIMER0ENCLK   0x0100U   /* bit8 */
 
-/* ------------------------------------------------------------------ */
-/* PIE 中断扩展（基址 0x0CE0）+ PIE 向量表（0x0D00）                    */
-/*   地址来源: CCS targetdb/Modules/C2000/C2000_PIE_Registers.xml       */
-/*   CPU-Timer0 中断 = INT1.7 → PIEIER1 bit6、向量表 0x0D06             */
-/* ------------------------------------------------------------------ */
+/* ---- PIE (base 0x0CE0) ; vector table at 0x0D00 ----
+   TINT0 = INT1.7 -> PIEIER1 bit6, vector slot 6 */
 #define PIE_BASE        0x0CE0UL
 #define PIECTRL         (*(volatile U16 *)(PIE_BASE + 0x0U))   /* bit0 = ENPIE */
 #define PIEACK          (*(volatile U16 *)(PIE_BASE + 0x1U))
@@ -129,37 +97,32 @@ typedef long          S32;      /* 32 位有符号 */
 #define PIEACK_GROUP1       0x0001U
 #define PIEIER1_TINT0       0x0040U     /* INT1.7 = TINT0 */
 
-/* ------------------------------------------------------------------ *
- * PIE 向量表（0x0D00）：F2833x 每个向量是 **32 位**（2 个字，低字在前），*
- * 共 12 组 × 8 通道 = 96 项。                                         *
- * ★ 曾经踩的坑：按 16 位写（0x0D06）是错的——TINT0 的正确位置是          *
- *   0x0D00 + 6*2 = 0x0D0C，写错位置会让 CPU 取到 RAM 里的残留向量      *
- *   （例如上一轮 TI 例程留下的地址）而跑飞。                           *
- * ------------------------------------------------------------------ */
+/* PIE vector table (0x0D00): every vector is 32-bit (ONE word, since C28x
+   addresses are 16-bit) => 12 groups x 8 channels = 96 entries.
+   PITFALL: writing 16-bit values at 0x0D06 is wrong; TINT0 lives at
+   0x0D00 + 6*2 = 0x0D0C. A wrong slot makes the CPU jump into leftover RAM. */
 #define PIE_VECT_BASE       0x0D00UL
-#define PIE_VECT_NUM        96U         /* 12 组 × 8 通道 */
-#define PIE_CH_TINT0        6U          /* INT1.7 的 0 基通道号 */
+#define PIE_VECT_NUM        96U
+#define PIE_CH_TINT0        6U
 
-void bsp_pie_vect_init(void);                            /* 全部指向安全陷阱 ISR */
-void bsp_pie_vect_set(U16 chan, U32 isr_addr);           /* 需在 EALLOW 下调用 */
+void bsp_pie_vect_init(void);                            /* point all to a safe trap ISR */
+void bsp_pie_vect_set(U16 chan, U32 isr_addr);           /* call under EALLOW */
 
-/* CPU 内核中断控制
-   ★ IER/IFR 是 CPU 内核寄存器，**没有内存地址**（CCS targetdb 里 IER/IFR
-     只有 id 没有 address）。必须用 C28x 的 OR/AND IER 指令访问；
-     早先写成 *(volatile U16*)0x0001 是错的——那只是 M0 SARAM，中断永远开不了。 */
-#define ENABLE_INT1_ASM     asm(" OR IER, #0x0001")     /* 使能 CPU INT1 (TINT0) */
+/* CPU core interrupt control.
+   PITFALL: IER/IFR are CPU core registers with NO memory address; they must be
+   accessed with the C28x OR/AND IER instructions. Writing *(volatile U16*)0x0001
+   only touches M0 SARAM and interrupts never enable. */
+#define ENABLE_INT1_ASM     asm(" OR IER, #0x0001")
 #define DISABLE_INT1_ASM    asm(" AND IER, #0xFFFE")
-#define EINT_ASM            asm(" CLRC INTM")           /* 开全局中断 */
-#define DINT_ASM            asm(" SETC INTM")           /* 关全局中断 */
-#define ERTM_ASM            asm(" CLRC DBGM")           /* 允许调试时也响应中断 */
-#endif /* !DSP2833x_DEVICE_H —— 已 include 官方头的模块，请改用官方结构体 */
+#define EINT_ASM            asm(" CLRC INTM")
+#define DINT_ASM            asm(" SETC INTM")
+#define ERTM_ASM            asm(" CLRC DBGM")
+#endif /* !DSP2833x_DEVICE_H */
 
-/* ------------------------------------------------------------------ */
-/* 引脚 → 位掩码换算                                                    */
-/*   A 组 GPIO0..31 : 数据/方向 bit=GPIOx;  MUX1/2 每脚 2 位 = x*2       */
-/*   B 组 GPIO32..63: 数据/方向 bit=GPIOx-32; MUX2 每脚 2 位=(x-48)*2    */
-/*   C 组 GPIO64..87: 数据/方向 bit=GPIOx-64; MUX1 每脚 2 位=(x-64)*2    */
-/* ------------------------------------------------------------------ */
+/* ---- pin -> bit/mux helpers (A/B/C groups) ----
+   A: data/dir bit = GPIOx      ; MUX1/2 = 2 bit/pin at x*2
+   B: data/dir bit = GPIOx-32   ; MUX2   = 2 bit/pin at (x-48)*2
+   C: data/dir bit = GPIOx-64   ; MUX1   = 2 bit/pin at (x-64)*2 */
 #define A_BIT(g)    (1UL << (g))
 #define A_MUX1(g)   (3UL << ((g) * 2))          /* GPIO0..15  */
 #define A_MUX2(g)   (3UL << (((g) - 16) * 2))   /* GPIO16..31 */
@@ -170,17 +133,11 @@ void bsp_pie_vect_set(U16 chan, U32 isr_addr);           /* 需在 EALLOW 下调
 #define C_MUX1(g)   (3UL << (((g) - 64) * 2))   /* GPIO64..79 */
 #define C_MUX2(g)   (3UL << (((g) - 80) * 2))   /* GPIO80..87 */
 
-/* ------------------------------------------------------------------ */
-/* 板级初始化：时钟 / 看门狗 / (FLASH 版本) Flash 等待状态              */
-/* ------------------------------------------------------------------ */
-void bsp_init(void);
-void bsp_service_dog(void);     /* 喂狗（已关狗时也无副作用） */
+void bsp_init(void);                            /* clock / watchdog / flash wait states */
+void bsp_service_dog(void);
 
-/* ------------------------------------------------------------------ */
-/* 通用引脚操作（按“引脚号 0..87”操作，自动区分 A/B/C 组）              */
-/*   有了它，LCD 等模块的数据脚可以随时改接到别的 GPIO（见 lcd1602.c）  */
-/* ------------------------------------------------------------------ */
-void bsp_pin_config_output(U16 pin);            /* 配成普通 IO + 输出 + 上拉 */
-void bsp_pin_set(U16 pin, U16 level);           /* level 非 0 = 输出高 */
+/* generic pin ops by absolute pin number 0..87 (A/B/C resolved automatically) */
+void bsp_pin_config_output(U16 pin);
+void bsp_pin_set(U16 pin, U16 level);
 
-#endif /* BSP_H_ */
+#endif
