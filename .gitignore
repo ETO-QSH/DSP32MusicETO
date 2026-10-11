@@ -18,3 +18,7 @@ _commitmsg.txt
 # 临时文件不入库
 _m.txt
 _commitmsg.txt
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
