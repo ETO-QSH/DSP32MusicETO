@@ -27,11 +27,11 @@ OPEN, CLOSE = '\u3016', '\u3017'          # the brackets that wrap the Chinese l
 
 def ascii_table():
     """95 glyphs, 8x8, column-major, LSB = top row"""
-    base = ImageFont.truetype(ASCII_FONT, 8)
+    base = ImageFont.truetype(ASCII_FONT, 10)
     out = []
     for code in range(0x20, 0x7F):
         img = Image.new('L', (8, 8), 0)
-        ImageDraw.Draw(img).text((4, 4), chr(code), fill=255, font=base, anchor='mm')
+        ImageDraw.Draw(img).text((4, 7), chr(code), fill=255, font=base, anchor='ms')
         px = img.load()
         cols = []
         for c in range(8):

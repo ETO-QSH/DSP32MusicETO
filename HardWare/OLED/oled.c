@@ -10,6 +10,7 @@
 #include "oled.h"
 #include "delay.h"
 #include "../MIDI/font_tables.h"
+#include "../MIDI/logo.h"
 #include "../MIDI/lrc_table.h"
 
 /* ---------------- 显存（按页打包，2 字节/字）---------------- */
@@ -268,6 +269,8 @@ void oled_show(U16 key, U16 value, U16 playing)
 #define LRC_SLOT      14U          /* 9*14 = 126 <= 128 */
 #define LRC_9         9U           /* 每行 9 字 */
 
+static void draw_splash(void);   /* 定义在后面 */
+
 static const Glyph14 *glyph_find(U16 code)
 {
     U16 lo = 0U, hi = (U16)(FONT16_COUNT - 1U);
@@ -357,7 +360,7 @@ void oled_lyric(U32 t_ms)
         if (lrc_table[i].t_ms <= t_ms) { idx = i; } else { break; }
     }
     if (t_ms < lrc_table[0].t_ms) {     /* 前奏：先留白 */
-        if (last != 0xFFFEU) { last = 0xFFFEU; oled_clear(); oled_flush(); }
+        if (last != 0xFFFEU) { last = 0xFFFEU; draw_splash(); }
         return;
     }
     if (idx == last) { return; }        /* 未换行 ⇒ 不重画（省 90ms 的 I2C） */
@@ -385,6 +388,26 @@ void oled_lyric(U32 t_ms)
         { const char *q = s; n = utf8_len(q); }
         x = (U16)((126U - n * LRC_SLOT) / 2U + 1U);
         draw_run(x, 34U, s, n);
+    }
+    oled_flush();
+}
+
+
+/* 前奏开机画面：像素级复刻的 logo（MIDI/logo.h）居中显示 */
+static void draw_splash(void)
+{
+    U8 pg, r;
+    U16 x;
+    oled_clear();
+    for (pg = 0U; pg < LOGO_PAGES; pg++) {
+        for (x = 0U; x < LOGO_W; x++) {
+            U8 bits = logo_pages[pg][x];
+            for (r = 0U; r < 8U; r++) {
+                if ((bits & (U8)(1U << r)) != 0U) {
+                    oled_pixel((U8)(22U + x), (U8)(10U + pg * 8U + r), 1U);
+                }
+            }
+        }
     }
     oled_flush();
 }
