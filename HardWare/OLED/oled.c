@@ -9,8 +9,7 @@
 #include "DSP2833x_Device.h"
 #include "oled.h"
 #include "delay.h"
-#include "font8x8.h"
-#include "../MIDI/font16.h"
+#include "../MIDI/font_tables.h"
 #include "../MIDI/lrc_table.h"
 
 /* ---------------- 显存（按页打包，2 字节/字）---------------- */
