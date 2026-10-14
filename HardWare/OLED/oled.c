@@ -10,8 +10,8 @@
 #include "oled.h"
 #include "delay.h"
 #include "font8x8.h"
-#include "font16.h"
-#include "lrc_table.h"
+#include "../MIDI/font16.h"
+#include "../MIDI/lrc_table.h"
 
 /* ---------------- 显存（按页打包，2 字节/字）---------------- */
 static U16 s_oled[8][64];       /* [page][word] : word 低字节 = 偶数列, 高字节 = 奇数列 */
