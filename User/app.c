@@ -22,6 +22,7 @@
 #include "key.h"
 #include "lcd1602.h"
 #include "audio.h"
+#include "oled.h"
 
 #define APP_LOOP_MS         8U      /* 一轮主循环的名义时长(ms)，用于虚拟计时 */
 #define APP_COUNT_MS        400U    /* 计数 +1 间隔(虚拟 ms) */
@@ -54,6 +55,8 @@ static void lcd_draw_all(U16 k)
     kb[15] = (char)('0' + (char)k);                 /* 第 16 格 = 按键数字 */
     kb[16] = 0;
     lcd1602_puts_at(LCD1602_LINE2, 0U, kb);         /* 定位只用 0xC0 ⇒ 抗 DB1 抖动 */
+
+    oled_show(k, g_value, audio_is_playing());      /* OLED 与 LCD 同步刷新 */
 }
 
 void app_init(void)
@@ -68,6 +71,9 @@ void app_init(void)
 
     lcd1602_clear();
     lcd_draw_all(1U);                               /* 第 16 格初始 K1 */
+
+    oled_init();                        /* OLED 上电自检画面 */
+    oled_show(g_key, g_value, 0U);      /* 立即显示主界面 */
 
     delay_ms(800U);
 
@@ -84,6 +90,11 @@ void app_task(void)
 
     /* 2) music: keep the synth ring topped up */
     audio_task();
+
+    /* 播放时用音频采样计数换算真实毫秒，显示歌词（换行才刷屏）*/
+    if (audio_is_playing() != 0U) {
+        oled_lyric(g_audio_samples / 25UL);   /* 25000 Hz / 1000 = 25 */
+    }
 
     /* 3) 计数 0..9999（不在这里请求刷 LCD ⇒ 不播放时 LCD 保持静止）*/
     if ((U16)(s_ms - s_last_count) >= ((audio_is_playing() != 0U) ? 320U : (U16)(APP_COUNT_MS * 16U))) {

@@ -17,7 +17,7 @@ set "LCMD=%LIB%\DSP2833x_common\cmd"
 set "LHDR=%LIB%\DSP2833x_headers"
 set "OUT=%PROJ%\Flash"
 set "CFLAGS=-v28 -ml -mt --float_support=fpu32 -g --diag_warning=225 --diag_wrap=off --display_error_number --abi=coffabi -DFLASH_BUILD"
-set INC="--include_path=%PROJ%\User" "--include_path=%H%\GPIO" "--include_path=%H%\DELAY" "--include_path=%H%\LED" "--include_path=%H%\SEG" "--include_path=%H%\KEY" "--include_path=%H%\LCD1602" "--include_path=%H%\BEEP" "--include_path=%H%\AUDIO" "--include_path=%LHDR%\include" "--include_path=%LIB%\DSP2833x_common\include" "--include_path=%CG_ROOT%\include"
+set INC="--include_path=%PROJ%\User" "--include_path=%H%\GPIO" "--include_path=%H%\DELAY" "--include_path=%H%\LED" "--include_path=%H%\SEG" "--include_path=%H%\KEY" "--include_path=%H%\LCD1602" "--include_path=%H%\BEEP" "--include_path=%H%\AUDIO" "--include_path=%H%\OLED" "--include_path=%LHDR%\include" "--include_path=%LIB%\DSP2833x_common\include" "--include_path=%CG_ROOT%\include"
 
 if not exist "%OUT%" mkdir "%OUT%"
 pushd "%OUT%"
@@ -49,9 +49,10 @@ echo === [2/3] HardWare drivers + User app ===
 "%CC%" %CFLAGS% %INC% --compile_only "%H%\KEY\key.c"          --output_file="key.obj"      || goto err
 "%CC%" %CFLAGS% %INC% --compile_only "%H%\LCD1602\lcd1602.c"  --output_file="lcd1602.obj"  || goto err
 "%CC%" %CFLAGS% %INC% --compile_only "%H%\AUDIO\audio.c"      --output_file="audio.obj"    || goto err
+"%CC%" %CFLAGS% %INC% --compile_only "%H%\OLED\oled.c"      --output_file="oled.obj"    || goto err
 
 echo === [3/3] link (official F28335.cmd + DSP2833x_Headers_nonBIOS.cmd) ===
-"%CC%" %CFLAGS% -z -m"DSP32Project_flash.map" --stack_size=0x300 --warn_sections "-i%CG_ROOT%\lib" --reread_libs --rom_model -o "DSP32Project_flash.out" main.obj app.obj bsp.obj delay.obj led.obj smg.obj key.obj lcd1602.obj audio.obj lib_gv.obj lib_sys.obj lib_gpio.obj lib_pie.obj lib_piev.obj lib_isr.obj lib_cpu.obj lib_epwm.obj lib_mem.obj lib_usd.obj lib_cs.obj lib_cal.obj lib_di.obj lib_dbg.obj "%PROJ%\tools\F28335.cmd" "%LHDR%\cmd\DSP2833x_Headers_nonBIOS.cmd" -llibc.a || goto err
+"%CC%" %CFLAGS% -z -m"DSP32Project_flash.map" --stack_size=0x300 --warn_sections "-i%CG_ROOT%\lib" --reread_libs --rom_model -o "DSP32Project_flash.out" main.obj app.obj bsp.obj delay.obj led.obj smg.obj key.obj lcd1602.obj audio.obj oled.obj lib_gv.obj lib_sys.obj lib_gpio.obj lib_pie.obj lib_piev.obj lib_isr.obj lib_cpu.obj lib_epwm.obj lib_mem.obj lib_usd.obj lib_cs.obj lib_cal.obj lib_di.obj lib_dbg.obj "%PROJ%\tools\F28335.cmd" "%LHDR%\cmd\DSP2833x_Headers_nonBIOS.cmd" -llibc.a || goto err
 
 popd
 echo.
