@@ -1,86 +1,116 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import io, os, re, glob
-from PIL import Image, ImageDraw, ImageFont
+"""
+gen_lrc.py -- LRC lyrics -> MIDI/lrc_tables.h
 
-W = r"D:\Documents\Documents\deepseek-harness\default-workspace"
-P = r"C:\Users\ETO\workspace_ccstheia\DSP32Project"
-LRC = glob.glob(r"D:\Downloads\Downloads\*.lrc")[0]
-txt = open(LRC, "rb").read().decode("utf-8-sig")
+    python gen_lrc.py
 
-ts = re.compile(r"\[(\d+):(\d+)(?:[.:](\d+))?\]")
-def ms_of(l):
-    m = ts.match(l)
-    if not m: return None
-    c = (m.group(3) or "0"); c = (c + "00")[:3]
-    return int(m.group(1)) * 60000 + int(m.group(2)) * 1000 + int(c)
+Reads the .lrc file that sits next to this script and emits the lyric timing
+table used by the OLED lyric engine.
 
-OPEN, CLOSE = "\u3016", "\u3017"          # 〖 〗
-rows = []
-for l in txt.splitlines():
-    l = l.strip()
-    if not l: continue
-    t = ms_of(l)
-    if t is None: continue
-    body = ts.sub("", l).strip()
-    if not body: continue
-    i, j = body.find(OPEN), body.rfind(CLOSE)
-    if (i >= 0) and (j > i):
-        text = body[i + 1:j].strip()
-        if text: rows.append((t, text))
-    # lines without 〖〗 are the japanese/furigana half -> skipped on purpose
+In this LRC every timestamp carries two lines: a Japanese one (often split
+into furigana fragments) and the Chinese translation wrapped in full-width
+brackets U+3016 .. U+3017. Only the Chinese line is kept, brackets removed.
 
-rep = io.open(os.path.join(W, "lrc_report.txt"), "w", encoding="utf-8", newline="\n")
-rep.write("Chinese lyric lines kept: %d\n\n" % len(rows))
-rep.write("%-9s %-4s %s\n" % ("time(ms)", "len", "text"))
-rep.write("-" * 78 + "\n")
-for t, s in rows:
-    rep.write("%-9d %-4d %s\n" % (t, len(s), s))
-rep.close()
-print("kept Chinese lines:", len(rows))
-print("max line length:", max(len(s) for _, s in rows))
-print("lines needing 2 rows (>8):", sum(1 for _, s in rows if len(s) > 8))
+All paths are relative to this script, so the MIDI/ folder is self-contained.
+"""
+import io
+import os
+import re
 
-chars, seen = [], set()
-for _, s in rows:
-    for ch in s:
-        if ch not in seen and ord(ch) > 0x7E:
-            seen.add(ch); chars.append(ch)
-print("unique glyphs:", len(chars))
+HERE = os.path.dirname(os.path.abspath(__file__))
+LRC = os.path.join(HERE, 'ふわふわ時間.lrc')
+OUT = os.path.join(HERE, 'lrc_tables.h')
 
-fpath = r"C:\Windows\Fonts\msyh.ttc"
-base = ImageFont.truetype(fpath, 15)
-def glyph(ch):
-    img = Image.new("L", (16, 16), 0)
-    ImageDraw.Draw(img).text((8, 8), ch, fill=255, font=base, anchor="mm")
-    px = img.load(); g = []
-    for half in (0, 8):
-        for c in range(16):
-            b = 0
-            for r in range(8):
-                if px[c, r + half] > 100: b |= (1 << r)
-            g.append(b)
-    return g
-rows2 = [(ord(c), c, glyph(c)) for c in chars]
-OUT = P + r"\HardWare\OLED\font16.h"
-with io.open(OUT, "w", encoding="utf-8", newline="\n") as f:
-    f.write("/* font16.h -- 16x16 Chinese subset, extracted from the LRC lyrics\n")
-    f.write("   %d glyphs; 32 bytes each: bytes 0..15 = top page columns, 16..31 = bottom page\n" % len(rows2))
-    f.write("   column-major, LSB = top row of that page (SSD1306 native) */\n")
-    f.write("#ifndef FONT16_H_\n#define FONT16_H_\n\n#define FONT16_COUNT %dU\n\n" % len(rows2))
-    f.write("typedef struct { U16 code; U8 data[32]; } Glyph16;\n\n")
-    f.write("static const Glyph16 font16[FONT16_COUNT] = {\n")
-    for code, ch, g in rows2:
-        f.write("    { 0x%04X, { %s } },\n" % (code, ",".join("0x%02X" % b for b in g)))
-    f.write("};\n\n#endif\n")
-print("font16.h:", len(rows2), "glyphs,", os.path.getsize(OUT), "bytes")
+OPEN = '\u3016'
+CLOSE = '\u3017'
+TIMESTAMP = re.compile(r'\[(\d+):(\d+)(?:[.:](\d+))?\]')
+ENCODINGS = ('utf-8-sig', 'utf-16', 'gbk', 'shift_jis')
 
-TAB = P + r"\HardWare\OLED\lrc_table.h"
-with io.open(TAB, "w", encoding="utf-8", newline="\n") as f:
-    f.write("/* lrc_table.h -- lyric timings (ms) + UTF-8 text; generated, do not edit */\n")
-    f.write("#ifndef LRC_TABLE_H_\n#define LRC_TABLE_H_\n\n#define LRC_COUNT %dU\n\n" % len(rows))
-    f.write("typedef struct { U32 t_ms; const char *txt; } LrcLine;\n\n")
-    f.write("static const LrcLine lrc_table[LRC_COUNT] = {\n")
-    for t, s in rows:
-        f.write('    { %7dU, "%s" },\n' % (t, s.replace('\\', '\\\\').replace('"', '\\"')))
-    f.write("};\n\n#endif\n")
-print("lrc_table.h:", len(rows), "lines,", os.path.getsize(TAB), "bytes")
+
+HALF_TO_FULL = {
+    '?': '\uff1f', '!': '\uff01', ',': '\uff0c', '.': '\u3002',
+    ':': '\uff1a', ';': '\uff1b', '(': '\uff08', ')': '\uff09',
+    '~': '\uff5e',
+}
+
+
+def timestamp_ms(line):
+    """'[mm:ss.xx]...' -> milliseconds, or None when the line has no stamp."""
+    m = TIMESTAMP.match(line)
+    if m is None:
+        return None
+    frac = (m.group(3) or '0')
+    frac = (frac + '00')[:3]
+    return int(m.group(1)) * 60000 + int(m.group(2)) * 1000 + int(frac)
+
+
+def chinese_text(line):
+    """The Chinese translation of one LRC line, or None."""
+    body = TIMESTAMP.sub('', line).strip()
+    i = body.find(OPEN)
+    j = body.rfind(CLOSE)
+    if i < 0 or j <= i:
+        return None
+    text = body[i + 1:j].strip()
+    text = "".join(HALF_TO_FULL.get(ch, ch) for ch in text)
+    return text or None
+
+
+def read_lyrics(path):
+    """[(t_ms, text)] for every Chinese lyric line, in file order."""
+    raw = io.open(path, 'rb').read()
+    content = None
+    for enc in ENCODINGS:
+        try:
+            content = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if content is None:
+        raise ValueError('cannot decode %s' % path)
+
+    lines = []
+    for line in content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        t_ms = timestamp_ms(line)
+        if t_ms is None:
+            continue
+        text = chinese_text(line)
+        if text:
+            lines.append((t_ms, text))
+    return lines
+
+
+def write_header(lines, path):
+    """Emit lrc_tables.h: timings in ms plus UTF-8 lyric text."""
+    out = io.open(path, 'w', encoding='utf-8', newline='\n')
+    out.write('/* lrc_tables.h -- lyric timings (ms) and UTF-8 text\n')
+    out.write('   %d lines; generated by MIDI/gen_lrc.py, do not edit */\n'
+              % len(lines))
+    out.write('#ifndef LRC_TABLES_H_\n#define LRC_TABLES_H_\n\n')
+    out.write('#define LRC_COUNT %dU\n\n' % len(lines))
+    out.write('typedef struct { U32 t_ms; const char *txt; } LrcLine;\n\n')
+    out.write('static const LrcLine lrc_table[LRC_COUNT] = {\n')
+    for t_ms, text in lines:
+        text = text.replace('\\', '\\\\').replace('"', '\\"')
+        out.write('    { %7dU, "%s" },\n' % (t_ms, text))
+    out.write('};\n\n#endif\n')
+    out.close()
+
+
+def main():
+    if not os.path.exists(LRC):
+        raise SystemExit('missing %s' % LRC)
+    lines = read_lyrics(LRC)
+    write_header(lines, OUT)
+    print('source  : %s' % os.path.basename(LRC))
+    print('lines   : %d' % len(lines))
+    print('longest : %d chars' % max(len(t) for _, t in lines))
+    print('written : %s (%d bytes)' % (OUT, os.path.getsize(OUT)))
+
+
+if __name__ == '__main__':
+    main()

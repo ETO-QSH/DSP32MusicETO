@@ -93,7 +93,7 @@ void app_task(void)
 
     /* 播放时用音频采样计数换算真实毫秒，显示歌词（换行才刷屏）*/
     if (audio_is_playing() != 0U) {
-        oled_lyric(g_audio_samples / 25UL);   /* 25000 Hz / 1000 = 25 */
+        oled_lyric((g_audio_samples / 25UL) % 228686UL);   /* 对歌曲时长取模，循环后重新同步歌词 */
     }
 
     /* 3) 计数 0..9999（不在这里请求刷 LCD ⇒ 不播放时 LCD 保持静止）*/

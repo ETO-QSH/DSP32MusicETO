@@ -10,19 +10,23 @@ Reads MIDI/lyrics.lrc to find exactly which CJK glyphs are needed, so the
 All paths are relative to this script.
 """
 import io
+import glob
 import os
 import re
 import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
+from gen_lrc import read_lyrics, LRC
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-LRC = os.path.join(HERE, 'lyrics.lrc')
+_MID = sorted(glob.glob(os.path.join(HERE, '*.mid')))[0]
+_BASE = os.path.basename(_MID).split('-')[0]
+LRC = os.path.join(HERE, _BASE + '.lrc')
 OUT = os.path.join(HERE, 'font_tables.h')
 
 ASCII_FONT = r'C:\Windows\Fonts\consola.ttf'
 CJK_FONT = r'C:\Windows\Fonts\msyh.ttc'
-OPEN, CLOSE = '\u3016', '\u3017'          # the brackets that wrap the Chinese line
 
 
 def ascii_table():
@@ -45,20 +49,12 @@ def ascii_table():
 
 
 def lyric_chars():
-    """chars used by the Chinese lyric lines, in sorted codepoint order"""
-    txt = io.open(LRC, 'rb').read().decode('utf-8-sig')
-    ts = re.compile(r'\[(\d+):(\d+)(?:[.:](\d+))?\]')
+    """chars used by the Chinese lyric lines (same parser as gen_lrc)"""
     seen = set()
-    for line in txt.splitlines():
-        line = line.strip()
-        if not line or ts.match(line) is None:
-            continue
-        body = ts.sub('', line).strip()
-        i, j = body.find(OPEN), body.rfind(CLOSE)
-        if i >= 0 and j > i:
-            for ch in body[i + 1:j].strip():
-                if ord(ch) > 0x20:
-                    seen.add(ord(ch))
+    for _t, text in read_lyrics(LRC):
+        for ch in text:
+            if ord(ch) > 0x20:
+                seen.add(ord(ch))
     return sorted(seen)
 
 

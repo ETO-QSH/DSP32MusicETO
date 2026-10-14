@@ -10,8 +10,8 @@
 #include "oled.h"
 #include "delay.h"
 #include "../MIDI/font_tables.h"
-#include "../MIDI/logo.h"
-#include "../MIDI/lrc_table.h"
+#include "../MIDI/logo_tables.h"
+#include "../MIDI/lrc_tables.h"
 
 /* ---------------- 显存（按页打包，2 字节/字）---------------- */
 static U16 s_oled[8][64];       /* [page][word] : word 低字节 = 偶数列, 高字节 = 奇数列 */
@@ -268,8 +268,9 @@ void oled_show(U16 key, U16 value, U16 playing)
 #define FONT16_H      14U
 #define LRC_SLOT      14U          /* 9*14 = 126 <= 128 */
 #define LRC_9         9U           /* 每行 9 字 */
+#define LRC_INTRO_MS  7237UL       /* 旧 logo 显示到 7.237s（首句歌词前的第二段）*/
 
-static void draw_splash(void);   /* 定义在后面 */
+static void draw_logo(U8 which);   /* 定义在后面 */
 
 static const Glyph14 *glyph_find(U16 code)
 {
@@ -333,37 +334,67 @@ static void draw_run(U16 x, U16 y, const char *s, U16 cnt)
 }
 
 /* 在空格处找最佳断点，保证 top <= bottom；优先选靠近中点且 top<=bottom 的 */
+/* 找一个断点：优先在空格处断开（空格归上行，不可见），
+ * 但必须保证上下两行都不超过 LRC_9 个字；否则退回中点。
+ * 返回上行字数 top（保证 top <= 下行字数）。 */
 static U16 split_at_space(const char *s, U16 n)
 {
     U16 i, best = 0U;
     const char *q = s;
+
+    if (n <= LRC_9) { return n; }
+
     for (i = 0U; i < n; i++) {
-        const char *save = q;
-        if (utf8_next(&q) == (U16)' ') {
-            U16 top = i;                 /* 空格前有 i 个字 */
-            if ((top > 0U) && (top <= (U16)(n - top - 1U))) { best = top; }
+        U16 cp = utf8_next(&q);
+        if (cp == (U16)' ') {
+            U16 top = (U16)(i + 1U);          /* 空格算在上行 */
+            U16 bot = (U16)(n - top);
+            if ((top <= LRC_9) && (bot <= LRC_9)) { best = top; }
         }
-        (void)save;
     }
-    if (best == 0U) { best = (U16)(n >> 1); }      /* 无空格或都不合适 ⇒ 取半 */
+    if (best == 0U) { best = (U16)(n >> 1); }  /* 没有合适空格 ⇒ 取半 */
+    if (best == 0U) { best = 1U; }
     if (best > (U16)(n - best)) { best = (U16)(n >> 1); }
     return best;
+}
+
+
+/* 计算用于居中的可见字数：忽略结尾的空格（空格仍会被跳过绘制）*/
+static U16 visible_len(const char *s, U16 cnt)
+{
+    const char *q = s;
+    U16 i, n = cnt;
+    for (i = 0U; i < cnt; i++) { (void)utf8_next(&q); }
+    if (cnt == 0U) { return 0U; }
+    q = s;
+    for (i = 0U; i + 1U < cnt; i++) { (void)utf8_next(&q); }
+    if (*q == ' ') { n = (U16)(cnt - 1U); }
+    return n;
+}
+
+
+/* 跳过开头的空格并相应减少字数：居中与绘制都不再为空档位留位置 */
+static const char *skip_lead(const char *s, U16 *cnt)
+{
+    while ((*cnt > 0U) && (*s == ' ')) { s++; (*cnt)--; }
+    return s;
 }
 
 void oled_lyric(U32 t_ms)
 {
     static U16 last = 0xFFFFU;
-    U16 idx = 0U, i, n, top, x, y, off;
-    const char *s;
+    U16 idx = 0U, i, n, top, x, y;
+    const char *s, *q;
 
     for (i = 0U; i < LRC_COUNT; i++) {
         if (lrc_table[i].t_ms <= t_ms) { idx = i; } else { break; }
     }
-    if (t_ms < lrc_table[0].t_ms) {     /* 前奏：先留白 */
-        if (last != 0xFFFEU) { last = 0xFFFEU; draw_splash(); }
+    if (t_ms < lrc_table[0].t_ms) {     /* 前奏：两段 logo */
+        U16 want = (t_ms < LRC_INTRO_MS) ? 0xFFFDU : 0xFFFEU;
+        if (last != want) { last = want; draw_logo((t_ms < LRC_INTRO_MS) ? 0U : 1U); }
         return;
     }
-    if (idx == last) { return; }        /* 未换行 ⇒ 不重画（省 90ms 的 I2C） */
+    if (idx == last) { return; }        /* 未换行 ⇒ 不重画（省 I2C 时间）*/
     last = idx;
 
     s = lrc_table[idx].txt;
@@ -371,40 +402,59 @@ void oled_lyric(U32 t_ms)
     oled_clear();
 
     if (n <= LRC_9) {                   /* 单行：水平 + 垂直居中 */
-        x = (U16)((126U - n * LRC_SLOT) / 2U + 1U);
         y = (U16)((64U - FONT16_H) / 2U);
+        s = skip_lead(s, &n);
+        x = (U16)((126U - visible_len(s, n) * LRC_SLOT) / 2U + 1U);
         draw_run(x, y, s, n);
     } else {                            /* 两行：上少下多 */
         top = split_at_space(s, n);
-        if (top == 0U) { top = (U16)(n >> 1); }
-        x = (U16)((126U - top * LRC_SLOT) / 2U + 1U);
+        if (top > LRC_9) { top = LRC_9; }
+        if (top == 0U) { top = 1U; }
+        s = skip_lead(s, &top);
+        x = (U16)((126U - visible_len(s, top) * LRC_SLOT) / 2U + 1U);
         draw_run(x, 16U, s, top);
 
-        /* 跳过断点处的空格 */
-        off = 0U; { const char *q = s; while (off < top) { (void)utf8_next(&q); off++; }
-                    if (*q == ' ') { q++; } else { } s = q; }
-        n = (U16)(n - top - ((*s == '\0') ? 0U : 0U));
-        /* 剩余字数 */
-        { const char *q = s; n = utf8_len(q); }
-        x = (U16)((126U - n * LRC_SLOT) / 2U + 1U);
-        draw_run(x, 34U, s, n);
+        q = s;                          /* 下行从第 top 个字之后开始 */
+        for (i = 0U; i < top; i++) { (void)utf8_next(&q); }
+        n = (U16)(n - top);
+        if (n > LRC_9) { n = LRC_9; }   /* 保护：绝不画出屏幕 */
+        q = skip_lead(q, &n);
+        x = (U16)((126U - visible_len(q, n) * LRC_SLOT) / 2U + 1U);
+        draw_run(x, 34U, q, n);
     }
     oled_flush();
 }
 
 
-/* 前奏开机画面：像素级复刻的 logo（MIDI/logo.h）居中显示 */
-static void draw_splash(void)
+/* 前奏开机画面：像素级 logo（MIDI/logo_tables.h）
+ *   t <  LRC_INTRO_MS  -> 旧 logo（Develop by / Dr.ETO）
+ *   t >= LRC_INTRO_MS  -> 新手绘 logo（ふわふわ じかん） */
+static void draw_logo(U8 which)
 {
     U8 pg, r;
     U16 x;
     oled_clear();
-    for (pg = 0U; pg < LOGO_PAGES; pg++) {
-        for (x = 0U; x < LOGO_W; x++) {
-            U8 bits = logo_pages[pg][x];
-            for (r = 0U; r < 8U; r++) {
-                if ((bits & (U8)(1U << r)) != 0U) {
-                    oled_pixel((U8)(22U + x), (U8)(10U + pg * 8U + r), 1U);
+    if (which == 0U) {
+        for (pg = 0U; pg < LOGO_PAGES; pg++) {
+            for (x = 0U; x < LOGO_W; x++) {
+                U8 bits = logo_pages[pg][x];
+                for (r = 0U; r < 8U; r++) {
+                    if ((bits & (U8)(1U << r)) != 0U) {
+                        oled_pixel((U8)(((128U - LOGO_W) / 2U) + x),
+                                   (U8)(((64U - LOGO_H) / 2U) + pg * 8U + r), 1U);
+                    }
+                }
+            }
+        }
+    } else {
+        for (pg = 0U; pg < LOGO2_PAGES; pg++) {
+            for (x = 0U; x < LOGO2_W; x++) {
+                U8 bits = logo2_pages[pg][x];
+                for (r = 0U; r < 8U; r++) {
+                    if ((bits & (U8)(1U << r)) != 0U) {
+                        oled_pixel((U8)(((128U - LOGO2_W) / 2U) + x),
+                                   (U8)(((64U - LOGO2_H) / 2U) + pg * 8U + r), 1U);
+                    }
                 }
             }
         }
